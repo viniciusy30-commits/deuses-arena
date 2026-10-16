@@ -1,3 +1,32 @@
+#id 2026-10-16-k
+#titulo Queda Relâmpago refeita e skills mirando
+- O Zeus vira um raio que sobe ao céu e desce como outro raio no ponto de queda (sem bola pulando)
+- Na subida o chão ao redor racha e é destruído
+- Na descida a área destruída é maior e fica eletrificada por alguns segundos, causando dano em quem ficar nela
+- Segure e arraste os botões ATQ, QUEDA e RAIO para mirar; solte para usar. Um toque simples continua com mira automática
+- Mostra a linha de mira e a área de impacto enquanto você arrasta
+
+#id 2026-10-16-j
+#titulo Eletricidade fina e ramificada
+- Removidos os círculos e brilhos estourados na mão e no ponto de impacto
+- Raios agora são finos, com 1 pixel de contorno e muitas ramificações
+- Impactos e explosões viraram descargas elétricas ramificadas
+- Orbe do inimigo virou um núcleo pequeno com arcos elétricos
+- Sem anéis de choque nem colunas de luz grossas
+
+#id 2026-10-16-i
+#titulo Efeitos das skills mais refinados
+- Raios mais finos, com contorno menor e núcleo bem definido
+- Colunas de luz mais estreitas e translúcidas, sem cobrir a tela
+- Explosões, impactos e orbes menores, com menos brilho estourado
+- Flash de tela e tremor mais suaves para ver os detalhes das sprites
+
+#id 2026-10-16-h
+#titulo Novas sprites do Zeus
+- Nova animação parado (respirando) com 9 quadros
+- Novas animações de andar, ataque/habilidades e ultimate (a Fúria do Olimpo agora tem animação própria)
+- Sprites de rotação atualizadas
+
 #id 2026-10-16-g
 #titulo Raios do Zeus refeitos em pixel art
 - Ataque básico agora é uma descarga elétrica ramificada, sem laser
