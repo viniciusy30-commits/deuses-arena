@@ -1,3 +1,15 @@
+#id 2026-10-16-f
+#titulo Ataques saem da mão do Zeus
+- Raios, orbes e feixes agora saem da mão que aponta para frente em cada direção
+- A carga de energia e a linha de mira também seguem a mão
+
+#id 2026-10-16-e
+#titulo Efeitos de magia profissionais
+- Todos os efeitos foram refeitos com texturas em pixel art: raios com brilho, feixes de energia, orbes de plasma e auras giratórias
+- Runas gregas douradas no chão com o Ultimate e vórtice de tempestade
+- Queda Relâmpago e Raio Fulminante com colunas de luz do céu, ondas de choque e fumaça
+- Crateras queimadas com rachaduras brilhantes e partículas luminosas
+
 #id 2026-10-16-d
 #titulo Sprites do Zeus atualizadas
 - Nova animação de andar do Zeus, mais fluida (8 quadros)

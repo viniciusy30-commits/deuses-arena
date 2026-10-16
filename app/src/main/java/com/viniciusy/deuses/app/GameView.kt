@@ -6,11 +6,14 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LightingColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.view.MotionEvent
@@ -92,6 +95,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         var flick = 0f
     }
     private class Scorch(val x: Float, val y: Float, val r: Float, var life: Float, val maxLife: Float) {
+        val v = Random.nextInt(4)
         val ox = FloatArray(14)
         val oy = FloatArray(14)
         val os = FloatArray(14)
@@ -112,6 +116,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private class Ghost(val x: Float, val y: Float, val dir: Int, var life: Float)
     private class Strike(val owner: Fighter, val x: Float, val y: Float, var delay: Float, val maxDelay: Float)
     private class Storm(val owner: Fighter, val x: Float, val y: Float, var t: Float, val dur: Float, var acc: Float)
+    private class Anim(val sheet: Array<Bitmap>, val x: Float, val y: Float, val size: Float, val squash: Float,
+                       val dur: Float, val add: Boolean, val flt: ColorFilter?, val rot: Float, val ground: Boolean) {
+        var t = 0f
+    }
+    private class Pillar(val x: Float, val y: Float, val h: Float, val w: Float, var life: Float, val maxLife: Float)
+    private class Beam(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val w: Float, var life: Float,
+                       val maxLife: Float, val flt: ColorFilter?)
     private class Btn(val idx: Int, val label: String) {
         var cx = 0f
         var cy = 0f
@@ -134,6 +145,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private val scorches = ArrayList<Scorch>()
     private val strikes = ArrayList<Strike>()
     private val storms = ArrayList<Storm>()
+    private val anims = ArrayList<Anim>()
+    private val pillars = ArrayList<Pillar>()
+    private val beams = ArrayList<Beam>()
 
     private var camX = 0f
     private var camY = 0f
@@ -161,6 +175,37 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private val idle = Array(4) { d -> Array(4) { i -> load("zeus/idle/${DIRS[d]}/frame_%03d.png".format(i)) } }
     private val walk = Array(4) { d -> Array(8) { i -> load("zeus/walk/${DIRS[d]}/frame_%03d.png".format(i)) } }
     private val cast = Array(4) { d -> Array(17) { i -> load("zeus/cast/${DIRS[d]}/frame_%03d.png".format(i)) } }
+
+    // efeitos (pixel art com textura)
+    private fun sheet(name: String, n: Int): Array<Bitmap> = Array(n) { i -> load("fx/${name}_%02d.png".format(i)) }
+    private val fxImpact = sheet("impact", 10)
+    private val fxBlast = sheet("blast", 12)
+    private val fxOrb = sheet("orb", 8)
+    private val fxAura = sheet("aura", 8)
+    private val fxPillar = sheet("pillar", 4)
+    private val fxBeam = sheet("beam", 4)
+    private val fxSmoke = sheet("smoke", 8)
+    private val fxScD = sheet("scorchd", 4)
+    private val fxScG = sheet("scorchg", 4)
+    private val fxRuneG = load("fx/rune_gold.png")
+    private val fxRuneC = load("fx/rune_cyan.png")
+    private val fxVortex = load("fx/vortex.png")
+    private val fxRing = load("fx/ring.png")
+    private val fxGlow = load("fx/glow.png")
+
+    private val fxRedF: ColorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+        0f, 0f, 1f, 0f, 0f,
+        0f, 0.45f, 0f, 0f, 0f,
+        0.25f, 0f, 0f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f)))
+    private val fxGoldF: ColorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+        0f, 0f, 1f, 0f, 0f,
+        0.1f, 0.25f, 0.6f, 0f, 0f,
+        0.45f, 0f, 0f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f)))
+    private val addMode = PorterDuffXfermode(PorterDuff.Mode.ADD)
+    private val addPaint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; xfermode = addMode }
+    private val normPaint = Paint().apply { isFilterBitmap = false; isAntiAlias = false }
 
     private val redF: ColorFilter = LightingColorFilter(0xFFFF7070.toInt(), 0)
     private val flashF: ColorFilter = LightingColorFilter(0xFFFFFFFF.toInt(), 0x00707070)
@@ -324,10 +369,54 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         scorches.add(Scorch(x, y, r, life, life))
     }
 
+    private fun tintOf(col: Int, outer: Int): ColorFilter? = when {
+        col == C_RED || outer == C_REDD -> fxRedF
+        col == C_GOLD || outer == C_GOLD -> fxGoldF
+        else -> null
+    }
+
+    private fun drawFx(c: Canvas, b: Bitmap, x: Float, y: Float, w: Float, h: Float, a: Float,
+                       add: Boolean, flt: ColorFilter?, rot: Float) {
+        val al = (a.coerceIn(0f, 1f) * 255f).toInt()
+        if (al <= 2) return
+        val pt = if (add) addPaint else normPaint
+        pt.alpha = al
+        pt.colorFilter = flt
+        if (rot != 0f) { c.save(); c.rotate(rot, x, y) }
+        dst.set(x - w / 2f, y - h / 2f, x + w / 2f, y + h / 2f)
+        c.drawBitmap(b, null, dst, pt)
+        if (rot != 0f) c.restore()
+        pt.colorFilter = null
+        pt.alpha = 255
+    }
+
+    private fun addAnim(sheet: Array<Bitmap>, x: Float, y: Float, size: Float, squash: Float, dur: Float,
+                        add: Boolean, flt: ColorFilter?, rot: Float, ground: Boolean) {
+        if (anims.size > 90) return
+        anims.add(Anim(sheet, x, y, size, squash, dur, add, flt, rot, ground))
+    }
+
+    private fun addPillar(x: Float, y: Float, h: Float, w: Float, life: Float) {
+        if (pillars.size > 24) return
+        pillars.add(Pillar(x, y, h, w, life, life))
+    }
+
+    private fun addBeam(x1: Float, y1: Float, x2: Float, y2: Float, w: Float, life: Float, flt: ColorFilter?) {
+        if (beams.size > 24) return
+        beams.add(Beam(x1, y1, x2, y2, w, life, life, flt))
+    }
+
+    private fun groundBlast(x: Float, y: Float, sc: Float, col: Int, outer: Int) {
+        addAnim(fxBlast, x, y, 300f * sc, 0.55f, 0.6f, true, tintOf(col, outer), 0f, true)
+        addAnim(fxSmoke, x + rnd(-25f, 25f) * sc, y + rnd(-6f, 6f), 170f * sc, 0.8f, 0.95f, false, null, 0f, true)
+        addAnim(fxSmoke, x + rnd(-50f, 50f) * sc, y + rnd(-10f, 6f), 130f * sc, 0.8f, 1.05f, false, null, 0f, true)
+    }
+
     private fun impact(x: Float, y: Float, sc: Float, col: Int, outer: Int) {
+        addAnim(fxImpact, x, y, 210f * sc, 1f, 0.36f, true, tintOf(col, outer), rnd(0f, 360f), false)
         rings.add(Ring(x, y, 70f * sc, 0.28f, 0.28f, col))
         rings.add(Ring(x, y, 115f * sc, 0.4f, 0.4f, outer))
-        val n = (5 + 3 * sc).toInt()
+        val n = (4 + 2 * sc).toInt()
         for (i in 0 until n) {
             val a = i * 6.2832f / n + rnd(-0.2f, 0.2f)
             makeBolt(x, y, x + cos(a) * 55f * sc, y + sin(a) * 45f * sc, 0.16f, 2.5f, col, outer, 6f * sc, 0)
@@ -357,6 +446,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     // ---------- habilidades ----------
+    // mão que aponta para frente (relativa aos pés), por direção do sprite: sul, leste, norte, oeste
+    private val HAND_DX = floatArrayOf(-30f, 56f, 56f, -74f)
+    private val HAND_DY = floatArrayOf(-56f, -72f, -96f, -82f)
+    private fun handX(f: Fighter): Float = f.x + HAND_DX[dirOf(f.faceX, f.faceY)]
+    private fun handY(f: Fighter): Float = f.y + HAND_DY[dirOf(f.faceX, f.faceY)]
+
     private fun aim(f: Fighter) {
         val o = opp(f)
         var ax = o.x - f.x
@@ -406,6 +501,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         makeBolt(f.x, f.y, f.x + rnd(-20f, 20f), f.y - 800f, 0.3f, 8f, C_CYAN, C_BLUE, 30f, 4)
         makeBolt(f.x, f.y, f.x + rnd(-14f, 14f), f.y - 800f, 0.22f, 4f, C_WHITE, C_CYAN, 18f, 2)
         impact(f.x, f.y - BODY, 1.2f, C_CYAN, C_BLUE)
+        addPillar(f.x, f.y, 800f, 100f, 0.32f)
+        groundBlast(f.x, f.y, 0.8f, C_CYAN, C_BLUE)
         addScorch(f.x, f.y, 45f, 3.5f)
         screenFlash = max(screenFlash, 0.1f)
     }
@@ -418,6 +515,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         makeBolt(skyX, f.y - 850f, f.x, f.y, 0.34f, 11f, C_CYAN, C_BLUE, 40f, 6)
         makeBolt(skyX, f.y - 850f, f.x, f.y, 0.26f, 5f, C_WHITE, C_CYAN, 22f, 3)
         impact(f.x, f.y - 10f, 1.7f, C_CYAN, C_BLUE)
+        addPillar(f.x, f.y, 850f, 150f, 0.4f)
+        groundBlast(f.x, f.y, 1.4f, C_CYAN, C_BLUE)
         rings.add(Ring(f.x, f.y, 150f, 0.4f, 0.4f, C_WHITE))
         addScorch(f.x, f.y, 70f, 5f)
         for (i in 0 until 8) {
@@ -437,8 +536,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun fire(f: Fighter, kind: Int) {
-        val ox = f.x + f.aimX * 34f
-        val oy = f.y - BODY - 6f + f.aimY * 10f
+        val ox = handX(f)
+        val oy = handY(f)
         val col = if (f.isPlayer) C_CYAN else C_RED
         val outer = if (f.isPlayer) C_BLUE else C_REDD
         when (kind) {
@@ -455,6 +554,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                         ey = o.y - BODY
                         hit = true
                     }
+                    addBeam(ox, oy, ex, ey, 42f, 0.22f, null)
+                    addAnim(fxImpact, ox, oy, 100f, 1f, 0.22f, true, null, rnd(0f, 360f), false)
                     makeBolt(ox, oy, ex, ey, 0.24f, 5f, C_CYAN, C_BLUE, 16f, 3)
                     makeBolt(ox, oy, ex, ey, 0.18f, 2.5f, C_WHITE, C_CYAN, 10f, 1)
                     burst(ox, oy, 8, col, 220f, 0.3f)
@@ -479,6 +580,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                 val len = 560f
                 val ex = ox + f.aimX * len
                 val ey = oy + f.aimY * len
+                addBeam(ox, oy, ex, ey, 100f, 0.4f, null)
+                addAnim(fxImpact, ox, oy, 170f, 1f, 0.3f, true, null, rnd(0f, 360f), false)
+                groundBlast(ex, ey + BODY, 1.0f, C_CYAN, C_BLUE)
                 makeBolt(ox, oy, ex, ey, 0.34f, 8f, C_CYAN, C_BLUE, 26f, 6)
                 makeBolt(ox, oy, ex, ey, 0.26f, 4f, C_WHITE, C_CYAN, 16f, 3)
                 var d = 60f
@@ -504,6 +608,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
             3 -> {
                 storms.add(Storm(f, f.x, f.y, 0f, 2.6f, 0f))
+                groundBlast(f.x, f.y, 2.0f, C_GOLD, C_CYAN)
                 rings.add(Ring(f.x, f.y, ULT_R, 0.6f, 0.6f, C_GOLD))
                 rings.add(Ring(f.x, f.y, ULT_R * 0.6f, 0.45f, 0.45f, C_WHITE))
                 rings.add(Ring(f.x, f.y - BODY, ULT_R * 1.2f, 0.5f, 0.5f, C_CYAN))
@@ -521,8 +626,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun chargeFx(f: Fighter) {
-        val hx = f.x + f.aimX * 34f
-        val hy = f.y - BODY - 6f
+        val hx = handX(f)
+        val hy = handY(f)
         val prog = (f.castT / (f.castDur * 0.47f)).coerceIn(0f, 1f)
         val col = if (f.isPlayer) C_CYAN else C_RED
         val outer = if (f.isPlayer) C_BLUE else C_REDD
@@ -644,6 +749,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                     makeBolt(k.owner.x, k.owner.y - BODY, k.x, k.y, 0.12f, 3f, C_WHITE, C_CYAN, 30f, 1)
                 }
                 impact(k.x, k.y, 1.3f, C_GOLD, C_CYAN)
+                addPillar(k.x, k.y, 800f, 130f, 0.34f)
+                groundBlast(k.x, k.y, 0.9f, C_GOLD, C_CYAN)
                 addScorch(k.x, k.y, 55f, 7f)
                 val o = opp(k.owner)
                 if (!o.dead && hypot(o.x - k.x, o.y - BODY - k.y) < 85f) {
@@ -670,6 +777,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             if (b.flick <= 0f) { b.flick = 0.05f; regen(b) }
         }
         val ri = rings.iterator(); while (ri.hasNext()) { val r = ri.next(); r.life -= dt; if (r.life <= 0f) ri.remove() }
+        val ani = anims.iterator(); while (ani.hasNext()) { val a = ani.next(); a.t += dt; if (a.t >= a.dur) ani.remove() }
+        val pli = pillars.iterator(); while (pli.hasNext()) { val a = pli.next(); a.life -= dt; if (a.life <= 0f) pli.remove() }
+        val bmi = beams.iterator(); while (bmi.hasNext()) { val a = bmi.next(); a.life -= dt; if (a.life <= 0f) bmi.remove() }
         val gi = ghosts.iterator(); while (gi.hasNext()) { val g = gi.next(); g.life -= dt; if (g.life <= 0f) gi.remove() }
         val sci = scorches.iterator(); while (sci.hasNext()) { val g = sci.next(); g.life -= dt0; if (g.life <= 0f) sci.remove() }
         val ti = texts.iterator(); while (ti.hasNext()) { val t = ti.next(); t.life -= dt0; t.y -= 40f * dt0; if (t.life <= 0f) ti.remove() }
@@ -834,22 +944,31 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         p.color = 0x55000000
         c.drawOval(f.x - 36f, f.y - 9f, f.x + 36f, f.y + 9f, p)
 
-        // aura de carga (raio / ultimate)
-        if (f.castKind == 2 || f.castKind == 3) {
-            val prog = (f.castT / (f.castDur * 0.47f)).coerceIn(0f, 1f)
-            val big = f.castKind == 3
-            val pulse = 1f + 0.08f * sin(timeAll * 25f)
-            fx.style = Paint.Style.FILL
-            fx.color = fxAlpha(0.14f + 0.12f * prog, if (big) C_GOLD else C_CYAN)
-            c.drawCircle(f.x, f.y - BODY, (if (big) 100f else 70f) * (0.5f + 0.5f * prog) * pulse, fx)
-            fx.color = fxAlpha(0.22f, C_WHITE)
-            c.drawCircle(f.x, f.y - BODY, (if (big) 60f else 40f) * (0.5f + 0.5f * prog) * pulse, fx)
-        }
-
         val shockOn = f.shock > 0f && ((timeAll * 16f).toInt() % 2 == 0)
         val flt: ColorFilter? = if (f.flash > 0f || shockOn) flashF else if (!f.isPlayer) redF else null
         val jx = if (f.shock > 0f) rnd(-2f, 2f) else 0f
         drawSprite(c, frameOf(f), f.x + jx, f.y, flt, 255)
+
+        // carga de energia (por cima do corpo)
+        if (f.castKind >= 0 && !f.castFired) {
+            val prog = (f.castT / (f.castDur * 0.47f)).coerceIn(0f, 1f)
+            val tint = if (f.isPlayer) null else fxRedF
+            if (f.castKind == 2 || f.castKind == 3) {
+                val big = f.castKind == 3
+                val fr = (timeAll * 18f).toInt() % 8
+                val sz = (if (big) 290f else 190f) * (0.55f + 0.45f * prog)
+                val ft = if (big) fxGoldF else tint
+                drawFx(c, fxGlow, f.x, f.y - BODY, sz * 1.4f, sz * 1.4f, 0.3f + 0.4f * prog, true, ft, 0f)
+                drawFx(c, fxAura[fr], f.x, f.y - BODY, sz, sz, 0.55f + 0.45f * prog, true, ft, 0f)
+            }
+            if (f.castKind == 0 || f.castKind == 2) {
+                val hx = handX(f)
+                val hy = handY(f)
+                val sz = 36f + (if (f.castKind == 2) 90f else 55f) * prog
+                drawFx(c, fxGlow, hx, hy, sz * 2f, sz * 2f, 0.5f, true, tint, 0f)
+                drawFx(c, fxOrb[(timeAll * 24f).toInt() % 8], hx, hy, sz, sz, 1f, true, tint, 0f)
+            }
+        }
         if (f.stun > 0f) {
             tp.textSize = 26f
             tp.color = 0xFFFFF59D.toInt()
@@ -864,21 +983,35 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         var i = 2
         while (i < pts.size) { path.lineTo(pts[i], pts[i + 1]); i += 2 }
         fx.style = Paint.Style.STROKE
-        fx.strokeWidth = w * 3.4f
-        fx.color = fxAlpha(a * 0.28f, outer)
+        fx.xfermode = addMode
+        fx.strokeWidth = w * 6f
+        fx.color = fxAlpha(a * 0.13f, outer)
         c.drawPath(path, fx)
-        fx.strokeWidth = w * 1.8f
+        fx.strokeWidth = w * 3.5f
+        fx.color = fxAlpha(a * 0.30f, outer)
+        c.drawPath(path, fx)
+        fx.strokeWidth = w * 2f
         fx.color = fxAlpha(a * 0.85f, col)
         c.drawPath(path, fx)
         fx.strokeWidth = w
         fx.color = fxAlpha(a, C_WHITE)
         c.drawPath(path, fx)
+        fx.xfermode = null
     }
 
     private fun drawBoltFx(c: Canvas, b: BoltFx) {
         val a = (b.life / b.maxLife).coerceIn(0f, 1f)
         drawPoly(c, b.main, b.width, a, b.col, b.outer)
         for (sp in b.subs) drawPoly(c, sp, b.width * 0.55f, a, b.col, b.outer)
+        if (b.width >= 4f && b.main.size >= 4) {
+            val flt = tintOf(b.col, b.outer)
+            val gs = b.width * 15f
+            val n = b.main.size / 2
+            val m = n / 2
+            drawFx(c, fxGlow, b.main[0], b.main[1], gs, gs, a * 0.8f, true, flt, 0f)
+            drawFx(c, fxGlow, b.main[(n - 1) * 2], b.main[(n - 1) * 2 + 1], gs * 1.3f, gs * 1.3f, a * 0.9f, true, flt, 0f)
+            drawFx(c, fxGlow, b.main[m * 2], b.main[m * 2 + 1], gs * 0.9f, gs * 0.9f, a * 0.5f, true, flt, 0f)
+        }
     }
 
     private fun drawMiniArc(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, w: Float, col: Int, outer: Int) {
@@ -890,19 +1023,26 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun drawOrb(c: Canvas, pr: Proj) {
         val col = if (pr.enemy) C_RED else C_CYAN
         val outer = if (pr.enemy) C_REDD else C_BLUE
-        val pulse = 1f + 0.15f * sin(timeAll * 30f)
+        val flt = tintOf(col, outer)
+        val pulse = 1f + 0.12f * sin(timeAll * 30f)
         val x = snap(pr.x)
         val y = snap(pr.y)
-        fx.style = Paint.Style.FILL
-        fx.color = fxAlpha(0.28f, outer)
-        c.drawCircle(x, y, 26f * pulse, fx)
-        fx.color = fxAlpha(0.75f, col)
-        c.drawCircle(x, y, 16f * pulse, fx)
-        fx.color = fxAlpha(1f, C_WHITE)
-        c.drawCircle(x, y, 8f, fx)
+        drawFx(c, fxGlow, x, y, 200f * pulse, 200f * pulse, 0.75f, true, flt, 0f)
+        drawFx(c, fxOrb[(timeAll * 24f).toInt() % 8], x, y, 112f * pulse, 112f * pulse, 1f, true, flt, 0f)
         for (k in 0 until 3) {
             val a = timeAll * 18f + k * 2.0944f
             drawMiniArc(c, x + cos(a) * 10f, y + sin(a) * 10f, x + cos(a + 0.9f) * 32f, y + sin(a + 0.9f) * 32f, 2f, col, outer)
+        }
+    }
+
+    private fun drawAnims(c: Canvas, ground: Boolean) {
+        for (a in anims) {
+            if (a.ground != ground) continue
+            val n = a.sheet.size
+            val k = (a.t / a.dur).coerceIn(0f, 1f)
+            val fr = (k * n).toInt().coerceIn(0, n - 1)
+            val al = if (a.add) 1f else 1f - k * 0.15f
+            drawFx(c, a.sheet[fr], a.x, a.y, a.size, a.size * a.squash, al, a.add, a.flt, a.rot)
         }
     }
 
@@ -923,34 +1063,24 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         drawArena(c)
 
         // cicatrizes no chão
-        fx.style = Paint.Style.FILL
         for (sc in scorches) {
             val a = (sc.life / sc.maxLife).coerceIn(0f, 1f)
-            val glow = ((sc.life - (sc.maxLife - 0.6f)) / 0.6f).coerceIn(0f, 1f)
-            for (i in 0 until 14) {
-                val bx = snap(sc.x + sc.ox[i])
-                val by = snap(sc.y + sc.oy[i])
-                val sz = snap(sc.os[i])
-                fx.color = fxAlpha(min(1f, a * 1.4f) * 0.75f, 0xFF04060B.toInt())
-                c.drawRect(bx, by, bx + sz, by + sz, fx)
-                if (glow > 0f && i % 3 == 0) {
-                    fx.color = fxAlpha(glow * 0.9f, C_CYAN)
-                    c.drawRect(bx, by, bx + PX * 2, by + PX * 2, fx)
-                }
-            }
+            val glow = ((sc.life - (sc.maxLife - 0.9f)) / 0.9f).coerceIn(0f, 1f)
+            val sz = sc.r * 2.7f
+            drawFx(c, fxScD[sc.v], sc.x, sc.y, sz, sz * 0.62f, min(1f, a * 1.6f), false, null, 0f)
+            if (glow > 0f) drawFx(c, fxScG[sc.v], sc.x, sc.y, sz, sz * 0.62f, glow, true, null, 0f)
         }
+
+        // fumaça e ondas de choque no chão
+        drawAnims(c, true)
 
         // anel de carga do ultimate
         for (f in listOf(player, enemy)) {
             if (!f.dead && f.castKind == 3 && !f.castFired) {
                 val prog = (f.castT / (f.castDur * 0.47f)).coerceIn(0f, 1f)
-                fx.style = Paint.Style.STROKE
-                fx.strokeWidth = 6f
-                fx.color = fxAlpha(0.35f + 0.4f * prog, C_GOLD)
-                c.drawCircle(f.x, f.y, ULT_R * prog, fx)
-                fx.strokeWidth = 4f
-                fx.color = fxAlpha(0.3f * prog, C_CYAN)
-                c.drawCircle(f.x, f.y, ULT_R * 0.6f * prog, fx)
+                val sz = ULT_R * 2f / 0.95f * prog
+                drawFx(c, fxRuneG, f.x, f.y, sz, sz, 0.3f + 0.7f * prog, true, null, timeAll * 50f)
+                drawFx(c, fxRuneC, f.x, f.y, sz * 0.6f, sz * 0.6f, 0.6f * prog, true, null, -timeAll * 80f)
             }
         }
 
@@ -963,25 +1093,21 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
         // marcações do ultimate
         for (s in storms) {
-            fx.style = Paint.Style.STROKE
-            fx.strokeWidth = 5f
-            fx.color = fxAlpha(0.5f, C_GOLD)
-            val pulse = 1f + 0.03f * sin(timeAll * 8f)
-            c.drawCircle(s.x, s.y, ULT_R * pulse, fx)
-            fx.color = fxAlpha(0.22f, C_GOLD)
-            c.drawCircle(s.x, s.y, ULT_R * 0.6f * pulse, fx)
+            val fade = min(1f, s.t * 4f) * min(1f, (s.dur - s.t) * 3f)
+            val pulse = 1f + 0.02f * sin(timeAll * 8f)
+            val vz = ULT_R * 2.5f * pulse
+            drawFx(c, fxVortex, s.x, s.y, vz, vz, 0.6f * fade, true, null, timeAll * 70f)
+            val sz = ULT_R * 2f / 0.95f * pulse
+            drawFx(c, fxRuneG, s.x, s.y, sz, sz, 0.95f * fade, true, null, -timeAll * 25f)
+            drawFx(c, fxRuneC, s.x, s.y, sz * 0.6f, sz * 0.6f, 0.75f * fade, true, null, timeAll * 55f)
         }
         for (k in strikes) {
             val prog = 1f - k.delay / k.maxDelay
-            fx.style = Paint.Style.FILL
-            fx.color = fxAlpha(0.1f + 0.25f * prog, C_GOLD)
-            c.drawCircle(k.x, k.y, 85f * prog, fx)
-            fx.style = Paint.Style.STROKE
-            fx.strokeWidth = 4f
-            fx.color = fxAlpha(0.8f, C_GOLD)
-            c.drawCircle(k.x, k.y, 85f, fx)
-            fx.color = fxAlpha(0.95f, C_WHITE)
-            c.drawCircle(k.x, k.y, 85f * (1f - prog) + 8f, fx)
+            val sz = 85f * 2f / 0.95f
+            drawFx(c, fxGlow, k.x, k.y, 200f * prog, 200f * prog, 0.5f, true, fxGoldF, 0f)
+            drawFx(c, fxRuneG, k.x, k.y, sz, sz, 0.3f + 0.7f * prog, true, null, timeAll * 120f)
+            val rs = (85f * (1f - prog) + 10f) * 2.37f
+            drawFx(c, fxRing, k.x, k.y, rs, rs, 0.95f, true, null, 0f)
             if (prog > 0.5f) {
                 val a = timeAll * 14f
                 drawMiniArc(c, k.x + cos(a) * 85f, k.y + sin(a) * 85f * 0.8f, k.x + cos(a + 2.2f) * 60f, k.y + sin(a + 2.2f) * 50f, 2f, C_GOLD, C_BLUE)
@@ -992,15 +1118,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         for (f in listOf(player, enemy)) {
             if (!f.dead && f.dashT > 0f) {
                 val prog = (1f - f.dashT / 0.24f).coerceIn(0f, 1f)
-                fx.style = Paint.Style.FILL
-                fx.color = fxAlpha(0.1f + 0.3f * prog, C_CYAN)
-                c.drawCircle(f.dashEx, f.dashEy, 120f * prog, fx)
-                fx.style = Paint.Style.STROKE
-                fx.strokeWidth = 4f
-                fx.color = fxAlpha(0.85f, C_CYAN)
-                c.drawCircle(f.dashEx, f.dashEy, 120f, fx)
-                fx.color = fxAlpha(0.95f, C_WHITE)
-                c.drawCircle(f.dashEx, f.dashEy, 120f * (1f - prog) + 10f, fx)
+                val sz = 120f * 2f / 0.95f
+                drawFx(c, fxGlow, f.dashEx, f.dashEy, 260f * prog, 260f * prog, 0.55f, true, null, 0f)
+                drawFx(c, fxRuneC, f.dashEx, f.dashEy, sz, sz, 0.35f + 0.65f * prog, true, null, timeAll * 200f)
+                val rs = (120f * (1f - prog) + 10f) * 2.37f
+                drawFx(c, fxRing, f.dashEx, f.dashEy, rs, rs, 0.95f, true, null, 0f)
             }
         }
 
@@ -1018,8 +1140,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         for (f in order) {
             if (!f.dead && f.castKind == 2 && !f.castFired) {
                 val prog = (f.castT / (f.castDur * 0.47f)).coerceIn(0f, 1f)
-                val hx = f.x + f.aimX * 34f
-                val hy = f.y - BODY - 6f
+                val hx = handX(f)
+                val hy = handY(f)
                 fx.style = Paint.Style.FILL
                 fx.color = fxAlpha(0.25f + 0.55f * prog, C_CYAN)
                 var d = 30f
@@ -1035,28 +1157,56 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         // projéteis
         for (pr in projs) drawOrb(c, pr)
 
+        // feixes de energia
+        for (bm in beams) {
+            val k = (bm.life / bm.maxLife).coerceIn(0f, 1f)
+            val dx = bm.x2 - bm.x1
+            val dy = bm.y2 - bm.y1
+            val len = hypot(dx, dy)
+            if (len < 4f) continue
+            val ang = atan2(dy, dx) * 57.29578f
+            drawFx(c, fxBeam[(timeAll * 30f).toInt() % 4], (bm.x1 + bm.x2) / 2f, (bm.y1 + bm.y2) / 2f,
+                len, bm.w * (0.4f + 0.6f * k), min(1f, k * 1.6f), true, bm.flt, ang)
+        }
+
+        // colunas de raio vindas do céu
+        for (pl in pillars) {
+            val k = (pl.life / pl.maxLife).coerceIn(0f, 1f)
+            val wf = pl.w * (0.3f + 0.7f * k)
+            drawFx(c, fxPillar[(timeAll * 30f).toInt() % 4], pl.x, pl.y - pl.h / 2f, wf, pl.h, min(1f, k * 1.5f), true, null, 0f)
+        }
+
+        // flashes de impacto
+        drawAnims(c, false)
+
         // raios
         for (b in bolts) drawBoltFx(c, b)
 
-        // anéis
-        fx.style = Paint.Style.STROKE
+        // anéis de energia
         for (r in rings) {
             val t = 1f - r.life / r.maxLife
-            fx.strokeWidth = 6f * (1f - t) + 2f
-            fx.color = fxAlpha(1f - t, r.color)
-            c.drawCircle(r.x, r.y, r.maxR * t, fx)
+            val rz = r.maxR * t * 2.37f
+            if (rz > 6f) drawFx(c, fxRing, r.x, r.y, rz, rz, 1f - t, true, tintOf(r.color, r.color), 0f)
         }
 
-        // partículas (quadradinhos pixelados)
+        // partículas (brilhantes, mistura aditiva)
         fx.style = Paint.Style.FILL
+        fx.xfermode = addMode
         for (q in parts) {
             val a = (q.life / q.maxLife).coerceIn(0f, 1f)
-            fx.color = fxAlpha(a, q.color)
             val px = snap(q.x)
             val py = snap(q.y)
             val sz = if (a > 0.5f) q.size else PX * 1.5f
+            fx.color = fxAlpha(a * 0.22f, q.color)
+            c.drawRect(px - sz, py - sz, px + sz * 2f, py + sz * 2f, fx)
+            fx.color = fxAlpha(a, q.color)
             c.drawRect(px, py, px + sz, py + sz, fx)
+            if (a > 0.55f) {
+                fx.color = fxAlpha(a, C_WHITE)
+                c.drawRect(px + PX, py + PX, px + sz - PX * 0.5f, py + sz - PX * 0.5f, fx)
+            }
         }
+        fx.xfermode = null
 
         // textos de dano
         for (t in texts) {
