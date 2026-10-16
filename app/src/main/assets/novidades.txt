@@ -1,3 +1,14 @@
+#id 2026-10-16-o
+#titulo Cooldowns de 1 segundo
+- Queda, Raio e Fúria do Olimpo agora têm 1 segundo de recarga
+
+#id 2026-10-16-n
+#titulo Descida suave, crateras e impactos mais bonitos
+- O Zeus desce suavemente da ultimate, com a animação continuando, e pousa levantando poeira
+- Raios que caem agora deixam crateras com borda, rachaduras ramificadas e pedras por um tempo
+- Impactos soltam pedaços de terra que voam e caem, e poeira
+- O chão eletrificado brilha pulsando, solta faíscas subindo e arcos pulando entre as rachaduras
+
 #id 2026-10-16-m
 #titulo Animação da ultimate em loop
 - A animação do Zeus na Fúria do Olimpo agora usa todos os 9 quadros e repete enquanto ele voa

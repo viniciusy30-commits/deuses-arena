@@ -44,7 +44,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         const val SC = 2.0f              // escala das sprites
         const val BODY = 40f             // altura do centro do corpo acima dos pés
         val DIRS = arrayOf("south", "east", "north", "west")
-        val CD_MAX = floatArrayOf(0.5f, 4f, 5f, 30f)       // 0 ataque, 1 passo, 2 raio, 3 ultimate
+        val CD_MAX = floatArrayOf(0.5f, 1f, 1f, 1f)       // 0 ataque, 1 passo, 2 raio, 3 ultimate
         val CAST_DUR = floatArrayOf(0.45f, 0f, 0.7f, 1.5f)
         const val ULT_R = 300f
         const val G = 2f                  // grade do pixel art dos raios
@@ -149,9 +149,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private class Pillar(val x: Float, val y: Float, val h: Float, val w: Float, var life: Float, val maxLife: Float,
                          val big: Boolean)
     private class Thor(val owner: Fighter, val x: Float, val y: Float, var delay: Float, val maxDelay: Float)
+    private class Chunk(var x: Float, var y: Float, var vx: Float, var vy: Float, val gy: Float, var life: Float,
+                        val maxLife: Float, val size: Float, val col: Int)
+    private class Puff(var x: Float, var y: Float, val vx: Float, val vy: Float, var r: Float, var life: Float, val maxLife: Float)
     private class Crater(val owner: Fighter, val x: Float, val y: Float, val r: Float, var life: Float, val maxLife: Float,
-                         val electric: Boolean) {
+                         val electric: Boolean, val dmg: Boolean) {
         val cracks = ArrayList<FloatArray>()
+        val rocks = ArrayList<FloatArray>()
         var tick = 0f
         var dmgT = 0.3f
     }
@@ -176,6 +180,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private val ghosts = ArrayList<Ghost>()
     private val scorches = ArrayList<Scorch>()
     private val craters = ArrayList<Crater>()
+    private val chunks = ArrayList<Chunk>()
+    private val puffs = ArrayList<Puff>()
     private val strikes = ArrayList<Strike>()
     private val storms = ArrayList<Storm>()
     private val anims = ArrayList<Anim>()
@@ -412,26 +418,65 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         makeBolt(x, y, x + cos(a) * len, y + sin(a) * len, 0.1f, 2f, col, outer, len * 0.25f, 0)
     }
 
-    private fun addCrater(owner: Fighter, x: Float, y: Float, r: Float, life: Float, electric: Boolean) {
-        if (craters.size > 6) craters.removeAt(0)
-        val cr = Crater(owner, x, y, r, life, life, electric)
-        val n = 10 + (r / 18f).toInt()
+    private fun addCrater(owner: Fighter, x: Float, y: Float, r: Float, life: Float, electric: Boolean, dmg: Boolean = electric) {
+        if (craters.size > 20) {
+            val i = craters.indexOfFirst { it.r < 100f }
+            craters.removeAt(if (i >= 0) i else 0)
+        }
+        val cr = Crater(owner, x, y, r, life, life, electric, dmg)
+        val n = 6 + (r / 22f).toInt()
         for (i in 0 until n) {
-            val a = i * 6.2832f / n + rnd(-0.2f, 0.2f)
-            val l = r * rnd(0.55f, 1.05f)
-            cr.cracks.add(genPoly(x, y, x + cos(a) * l, y + sin(a) * l * 0.6f, l * 0.14f, 3))
+            val a = i * 6.2832f / n + rnd(-0.25f, 0.25f)
+            val l = r * rnd(0.6f, 1.05f)
+            val pts = genPoly(x, y, x + cos(a) * l, y + sin(a) * l * 0.6f, l * 0.14f, 3)
+            cr.cracks.add(pts)
+            if (r > 90f) {
+                val k = Random.nextInt(2, pts.size / 2 - 2)
+                val bx = pts[k * 2]
+                val by = pts[k * 2 + 1]
+                val ba = a + (if (Random.nextBoolean()) 1f else -1f) * rnd(0.5f, 1.0f)
+                val bl = l * rnd(0.25f, 0.45f)
+                cr.cracks.add(genPoly(bx, by, bx + cos(ba) * bl, by + sin(ba) * bl * 0.6f, bl * 0.18f, 2))
+            }
+        }
+        val nr = 4 + (r / 40f).toInt()
+        for (i in 0 until nr) {
+            val a = rnd(0f, 6.2832f)
+            val d = r * rnd(0.55f, 1.0f)
+            cr.rocks.add(floatArrayOf(x + cos(a) * d, y + sin(a) * d * 0.6f, rnd(3f, 7f)))
         }
         craters.add(cr)
     }
 
+    // pedaços de terra que voam e caem de verdade
     private fun debris(x: Float, y: Float, n: Int) {
-        if (parts.size > 450) return
+        if (chunks.size > 160) return
         for (i in 0 until n) {
             val a = rnd(0f, 6.2832f)
-            val sp = rnd(120f, 380f)
-            parts.add(Part(x + cos(a) * rnd(10f, 60f), y + sin(a) * rnd(5f, 30f), cos(a) * sp, sin(a) * sp * 0.7f - rnd(80f, 260f),
-                rnd(0.4f, 0.8f), 0.8f, if (i % 2 == 0) 0xFF8A7A66.toInt() else 0xFF5A4E40.toInt(), 8f))
+            val sp = rnd(120f, 420f)
+            chunks.add(Chunk(x + cos(a) * rnd(8f, 50f), y + sin(a) * rnd(4f, 25f), cos(a) * sp, -rnd(260f, 620f),
+                y + rnd(-10f, 30f) + sin(a) * 20f, rnd(2.2f, 3.8f), 3.8f, rnd(3f, 7f),
+                if (i % 3 == 0) 0xFF6B5E50.toInt() else 0xFF3A3340.toInt()))
         }
+    }
+
+    // nuvem de poeira subindo do impacto
+    private fun dust(x: Float, y: Float, n: Int, sc: Float) {
+        if (puffs.size > 60) return
+        for (i in 0 until n) {
+            val a = rnd(0f, 6.2832f)
+            val sp = rnd(30f, 110f) * sc
+            puffs.add(Puff(x + cos(a) * 20f * sc, y + sin(a) * 10f * sc, cos(a) * sp, sin(a) * sp * 0.4f - rnd(10f, 45f),
+                rnd(22f, 40f) * sc, rnd(0.9f, 1.5f), 1.5f))
+        }
+    }
+
+    // pouso suave do Zeus depois da ultimate
+    private fun landSoft(f: Fighter) {
+        dust(f.x, f.y, 8, 1.0f)
+        burst(f.x, f.y - 10f, 10, C_CYAN, 220f, 0.5f)
+        for (i in 0 until 4) arc(f.x + rnd(-40f, 40f), f.y + rnd(-10f, 10f), rnd(20f, 45f))
+        shake = max(shake, 0.1f)
     }
 
     private fun addScorch(x: Float, y: Float, r: Float, life: Float) {
@@ -595,7 +640,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         impact(x, y - BODY, 1.6f, C_CYAN, C_BLUE)
         groundBlast(x, y, 1.5f, C_CYAN, C_BLUE)
         radialBolts(x, y, 12, 80f, RISE_R * 1.1f, 4f, 0.3f)
-        addCrater(f, x, y, RISE_R, 7f, false)
+        addCrater(f, x, y, RISE_R, 8f, false)
+        dust(x, y, 6, 1.0f)
         addScorch(x, y, 60f, 5f)
         for (i in 0 until 5) {
             val a = i * 1.2566f + rnd(-0.3f, 0.3f)
@@ -625,7 +671,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         impact(x, y - 10f, 2.2f, C_CYAN, C_BLUE)
         groundBlast(x, y, 2.6f, C_CYAN, C_BLUE)
         radialBolts(x, y, 18, 110f, LAND_R * 1.25f, 4f, 0.35f)
-        addCrater(f, x, y, LAND_R, 6f, true)
+        addCrater(f, x, y, LAND_R, 10f, true)
+        dust(x, y, 10, 1.6f)
         addScorch(x, y, 110f, 8f)
         for (i in 0 until 8) {
             val a = i * 0.7854f + rnd(-0.2f, 0.2f)
@@ -675,6 +722,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         rings.add(Ring(x, y, THOR_R * 1.7f, 0.7f, 0.7f, C_BLUE))
         radialBolts(x, y, 14, 110f, THOR_R * 1.5f, 5f, 0.3f)
         addScorch(x, y, 120f, 9f)
+        addCrater(k.owner, x, y, THOR_R, 10f, true)
+        dust(x, y, 12, 1.8f)
+        debris(x, y, 36)
         for (i in 0 until 6) {
             val a = i * 1.0472f + rnd(-0.2f, 0.2f)
             addScorch(x + cos(a) * THOR_R, y + sin(a) * THOR_R * 0.6f, 30f, 6f)
@@ -905,7 +955,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                 impact(k.x, k.y, 1.2f, C_CYAN, C_BLUE)
                 addPillar(k.x, k.y, 800f, 120f, 0.34f)
                 groundBlast(k.x, k.y, 0.9f, C_CYAN, C_BLUE)
-                addScorch(k.x, k.y, 50f, 6f)
+                addScorch(k.x, k.y, 36f, 5f)
+                addCrater(k.owner, k.x, k.y, 62f, 3.5f, true, false)
+                dust(k.x, k.y, 3, 0.6f)
+                debris(k.x, k.y, 6)
                 val o = opp(k.owner)
                 if (!o.dead && hypot(o.x - k.x, o.y - BODY - k.y) < 85f) {
                     damage(o, 90f, 0.6f)
@@ -964,16 +1017,60 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                     val i = Random.nextInt(ck.size / 2)
                     arc(ck[i * 2], ck[i * 2 + 1], rnd(16f, 44f))
                 }
-                cr.dmgT -= dt
-                if (cr.dmgT <= 0f) {
-                    cr.dmgT = 0.5f
-                    val o = opp(cr.owner)
-                    if (!o.dead && o.dashT <= 0f && hypot(o.x - cr.x, (o.y - cr.y) / 0.6f) < cr.r * 0.9f) {
-                        damage(o, 12f, 0.25f)
-                        arc(o.x + rnd(-20f, 20f), o.y - BODY + rnd(-30f, 30f), rnd(30f, 60f))
+                // faíscas subindo das rachaduras
+                if (Random.nextFloat() < dt * 22f) {
+                    val ck = cr.cracks[Random.nextInt(cr.cracks.size)]
+                    val i = Random.nextInt(ck.size / 2)
+                    parts.add(Part(ck[i * 2], ck[i * 2 + 1], rnd(-25f, 25f), -rnd(50f, 130f), 0.7f, 0.7f, C_CYAN, 4f))
+                }
+                // arcos pulando de uma rachadura para outra
+                if (Random.nextFloat() < dt * 6f) {
+                    val c1 = cr.cracks[Random.nextInt(cr.cracks.size)]
+                    val c2 = cr.cracks[Random.nextInt(cr.cracks.size)]
+                    val i1 = Random.nextInt(c1.size / 2)
+                    val i2 = Random.nextInt(c2.size / 2)
+                    if (hypot(c1[i1 * 2] - c2[i2 * 2], c1[i1 * 2 + 1] - c2[i2 * 2 + 1]) < cr.r * 0.8f) {
+                        makeBolt(c1[i1 * 2], c1[i1 * 2 + 1], c2[i2 * 2], c2[i2 * 2 + 1], 0.14f, 3f, C_WHITE, C_CYAN, 10f, 0)
+                    }
+                }
+                if (cr.dmg) {
+                    cr.dmgT -= dt
+                    if (cr.dmgT <= 0f) {
+                        cr.dmgT = 0.5f
+                        val o = opp(cr.owner)
+                        if (!o.dead && o.dashT <= 0f && hypot(o.x - cr.x, (o.y - cr.y) / 0.6f) < cr.r * 0.9f) {
+                            damage(o, 12f, 0.25f)
+                            arc(o.x + rnd(-20f, 20f), o.y - BODY + rnd(-30f, 30f), rnd(30f, 60f))
+                        }
                     }
                 }
             }
+        }
+        val chi = chunks.iterator()
+        while (chi.hasNext()) {
+            val ch = chi.next()
+            ch.life -= dt0
+            if (ch.life <= 0f) { chi.remove(); continue }
+            if (ch.vy != 0f || ch.y < ch.gy) {
+                ch.vy += 1300f * dt
+                ch.x += ch.vx * dt
+                ch.y += ch.vy * dt
+                if (ch.y >= ch.gy) {
+                    ch.y = ch.gy
+                    ch.vy = -ch.vy * 0.28f
+                    ch.vx *= 0.45f
+                    if (abs(ch.vy) < 40f) { ch.vy = 0f; ch.vx = 0f }
+                }
+            }
+        }
+        val pui = puffs.iterator()
+        while (pui.hasNext()) {
+            val pf = pui.next()
+            pf.life -= dt0
+            if (pf.life <= 0f) { pui.remove(); continue }
+            pf.x += pf.vx * dt
+            pf.y += pf.vy * dt
+            pf.r += 26f * dt
         }
         val sci = scorches.iterator(); while (sci.hasNext()) { val g = sci.next(); g.life -= dt0; if (g.life <= 0f) sci.remove() }
         val ti = texts.iterator(); while (ti.hasNext()) { val t = ti.next(); t.life -= dt0; t.y -= 40f * dt0; if (t.life <= 0f) ti.remove() }
@@ -1012,8 +1109,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         for (i in 0 until 4) if (f.cd[i] > 0f) f.cd[i] -= dt
         if (f.flash > 0f) f.flash -= dt
         val flyTarget = if (!f.dead && (f.castKind == 3 || storms.any { it.owner === f })) 80f else 0f
-        f.lift += (flyTarget - f.lift) * min(1f, dt * 4f)
-        if (flyTarget == 0f && f.lift < 0.5f) f.lift = 0f
+        if (flyTarget > 0f) {
+            f.lift += (flyTarget - f.lift) * min(1f, dt * 4f)
+        } else if (f.lift > 0f) {
+            f.lift = max(0f, f.lift - (14f + f.lift * 1.1f) * dt)
+            if (f.lift <= 0f) landSoft(f)
+        }
         if (f.lift > 20f && Random.nextFloat() < 0.5f) arc(f.x + rnd(-40f, 40f), f.y - BODY - f.lift + rnd(-45f, 45f), rnd(25f, 60f))
 
         if (f.dead) {
@@ -1138,7 +1239,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         return if (f.castKind >= 0) {
             if (f.castKind == 3) ult[d][((timeAll * 10f).toInt()) % 9]
             else cast[d][min(8, (f.castT / f.castDur * 9f).toInt())]
-        } else if (f.lift > 12f) {
+        } else if (f.lift > 3f) {
             ult[d][((timeAll * 10f).toInt()) % 9]
         } else if (f.moving) {
             walk[d][((f.animT * 10f).toInt()) % 8]
@@ -1193,6 +1294,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             intArrayOf(0x003A7BFF, 0x555FB8FF, 0xDDFFFFFF.toInt(), 0x555FB8FF, 0x003A7BFF),
             floatArrayOf(0f, 0.3f, 0.5f, 0.7f, 1f), Shader.TileMode.CLAMP)
         xfermode = addMode
+    }
+    private val chunkPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val puffPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(0f, 0f, 1f, intArrayOf(0x90707A94.toInt(), 0x50606880, 0x00606880),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
     }
     private val aimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -1418,11 +1524,27 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             if (glow > 0f) drawGlowE(c, sc.x, sc.y, sc.r * 1.2f, sc.r * 0.7f, 0xFF5FB8FF.toInt(), glow * 0.16f)
         }
 
-        // rachaduras no chão (a da descida fica eletrificada)
+        // crateras e rachaduras no chão (as eletrificadas brilham e soltam faíscas)
         for (cr in craters) {
             val fade = min(1f, cr.life / 1.5f)
-            val glow = if (cr.electric) fade else ((cr.life - (cr.maxLife - 1f)) / 1f).coerceIn(0f, 1f)
-            drawDark(c, cr.x, cr.y, cr.r * 1.15f, cr.r * 0.7f, fade * 0.8f)
+            val glow = if (cr.electric) fade else ((cr.life - (cr.maxLife - 1.2f)) / 1.2f).coerceIn(0f, 1f)
+            val pulse = 0.65f + 0.35f * sin(timeAll * 5f + cr.x * 0.01f)
+            drawDark(c, cr.x, cr.y, cr.r * 1.1f, cr.r * 0.68f, fade * 0.85f)
+            rf.set(cr.x - cr.r * 0.92f, cr.y - cr.r * 0.56f, cr.x + cr.r * 0.92f, cr.y + cr.r * 0.56f)
+            bp.xfermode = null
+            bp.strokeWidth = 7f
+            bp.color = fxAlpha(fade * 0.35f, 0xFF1A1D2B.toInt())
+            c.drawOval(rf, bp)
+            bp.strokeWidth = 2.5f
+            bp.color = fxAlpha(fade * 0.5f, 0xFF6A7390.toInt())
+            c.drawArc(rf, 200f, 110f, false, bp)
+            if (glow > 0.02f) drawGlowE(c, cr.x, cr.y, cr.r * 0.85f, cr.r * 0.5f, 0xFF3A7BFF.toInt(), glow * pulse * 0.2f)
+            for (rk in cr.rocks) {
+                chunkPaint.color = fxAlpha(fade * 0.9f, 0xFF2B2A36.toInt())
+                c.drawCircle(rk[0], rk[1], rk[2], chunkPaint)
+                chunkPaint.color = fxAlpha(fade * 0.5f, 0xFF6A7390.toInt())
+                c.drawCircle(rk[0] - rk[2] * 0.3f, rk[1] - rk[2] * 0.3f, rk[2] * 0.45f, chunkPaint)
+            }
             for ((ci, ck) in cr.cracks.withIndex()) {
                 polyPath(ck, 1f)
                 bp.xfermode = null
@@ -1430,13 +1552,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                 bp.color = fxAlpha(fade * 0.9f, 0xFF04060C.toInt())
                 c.drawPath(boltPath, bp)
                 if (glow > 0.02f) {
-                    val fl = 0.55f + 0.45f * sin(timeAll * 22f + ci * 1.7f)
+                    val fl = 0.55f + 0.45f * sin(timeAll * 18f + ci * 1.7f)
                     bp.xfermode = addMode
-                    bp.strokeWidth = 5f
-                    bp.color = fxAlpha(glow * fl * 0.3f, 0xFF3A7BFF.toInt())
+                    bp.strokeWidth = 10f
+                    bp.color = fxAlpha(glow * fl * 0.12f, 0xFF3A7BFF.toInt())
+                    c.drawPath(boltPath, bp)
+                    bp.strokeWidth = 4f
+                    bp.color = fxAlpha(glow * fl * 0.4f, 0xFF5FB8FF.toInt())
                     c.drawPath(boltPath, bp)
                     bp.strokeWidth = 1.6f
-                    bp.color = fxAlpha(glow * fl, 0xFFBDEFFF.toInt())
+                    bp.color = fxAlpha(glow * fl, 0xFFE8FBFF.toInt())
                     c.drawPath(boltPath, bp)
                     bp.xfermode = null
                 }
@@ -1491,6 +1616,24 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         for (k in thors) {
             val prog = (1f - k.delay / k.maxDelay).coerceIn(0f, 1f)
             drawCloud(c, k.x, k.y - 430f, 0.6f + 0.4f * min(1f, prog * 2f), min(1f, prog * 3f))
+        }
+
+        // pedaços de terra voando e poeira
+        for (ch in chunks) {
+            val a = min(1f, ch.life / 0.5f)
+            chunkPaint.color = fxAlpha(a, ch.col)
+            c.drawRect(ch.x - ch.size, ch.y - ch.size * 0.8f, ch.x + ch.size, ch.y + ch.size * 0.8f, chunkPaint)
+            chunkPaint.color = fxAlpha(a * 0.5f, 0xFF8A8FA8.toInt())
+            c.drawRect(ch.x - ch.size, ch.y - ch.size * 0.8f, ch.x, ch.y - ch.size * 0.2f, chunkPaint)
+        }
+        for (pf in puffs) {
+            val a = (pf.life / pf.maxLife).coerceIn(0f, 1f)
+            puffPaint.alpha = (min(1f, a * 1.6f) * 0.8f * 255f).toInt()
+            c.save()
+            c.translate(pf.x, pf.y)
+            c.scale(pf.r, pf.r * 0.7f)
+            c.drawCircle(0f, 0f, 1f, puffPaint)
+            c.restore()
         }
 
         // pilares de luz (raios vindos do céu)
