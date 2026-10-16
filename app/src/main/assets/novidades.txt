@@ -1,3 +1,11 @@
+#id 2026-10-16-g
+#titulo Raios do Zeus refeitos em pixel art
+- Ataque básico agora é uma descarga elétrica ramificada, sem laser
+- Raio Fulminante: nuvem de tempestade, runa azul marcando o alvo e um raio gigante despencando do céu (estilo El Thor)
+- Queda Relâmpago: o Zeus sobe como um raio destruindo tudo ao redor e desce ainda mais forte, com explosão maior
+- Fúria do Olimpo: runa gigante azul e vários raios caindo ao redor dele, cada um marcado por uma runa
+- Todas as texturas redesenhadas em pixel art de verdade: paleta fixa, bordas duras e sem borrão
+
 #id 2026-10-16-f
 #titulo Ataques saem da mão do Zeus
 - Raios, orbes e feixes agora saem da mão que aponta para frente em cada direção
