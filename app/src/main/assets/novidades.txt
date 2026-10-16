@@ -1,3 +1,9 @@
+#id 2026-10-16-p
+#titulo Impacto dos raios refeito, sem crateras
+- Removidas as crateras, manchas e a eletricidade que ficava no chão
+- O raio ao tocar o chão agora solta ondas de choque, uma coroa de raios subindo, faíscas caindo, poeira e pedaços de terra
+- Tudo some em menos de 2 segundos
+
 #id 2026-10-16-o
 #titulo Cooldowns de 1 segundo
 - Queda, Raio e Fúria do Olimpo agora têm 1 segundo de recarga
