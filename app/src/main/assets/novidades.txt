@@ -1,3 +1,8 @@
+#id 2026-10-16-d
+#titulo Sprites do Zeus atualizadas
+- Nova animação de andar do Zeus, mais fluida (8 quadros)
+- Sprite de rotação do Zeus de costas atualizada
+
 #id 2026-10-16-c
 #titulo Raio no ataque e queda relâmpago
 - Ataque básico agora é um raio instantâneo que acerta o inimigo

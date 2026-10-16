@@ -159,7 +159,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     // sprites
     private fun load(p: String): Bitmap = context.assets.open(p).use { BitmapFactory.decodeStream(it) }
     private val idle = Array(4) { d -> Array(4) { i -> load("zeus/idle/${DIRS[d]}/frame_%03d.png".format(i)) } }
-    private val walk = Array(4) { d -> Array(6) { i -> load("zeus/walk/${DIRS[d]}/frame_%03d.png".format(i)) } }
+    private val walk = Array(4) { d -> Array(8) { i -> load("zeus/walk/${DIRS[d]}/frame_%03d.png".format(i)) } }
     private val cast = Array(4) { d -> Array(17) { i -> load("zeus/cast/${DIRS[d]}/frame_%03d.png".format(i)) } }
 
     private val redF: ColorFilter = LightingColorFilter(0xFFFF7070.toInt(), 0)
@@ -819,7 +819,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             val fr = min(16, (f.castT / f.castDur * 17f).toInt())
             cast[d][fr]
         } else if (f.moving) {
-            walk[d][((f.animT * 10f).toInt()) % 6]
+            walk[d][((f.animT * 10f).toInt()) % 8]
         } else {
             idle[d][((f.animT * 5f).toInt()) % 4]
         }
