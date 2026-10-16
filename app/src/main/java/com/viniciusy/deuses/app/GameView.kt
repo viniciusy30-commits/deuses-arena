@@ -1136,10 +1136,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun frameOf(f: Fighter): Bitmap {
         val d = dirOf(f.faceX, f.faceY)
         return if (f.castKind >= 0) {
-            val fr = min(8, (f.castT / f.castDur * 9f).toInt())
-            if (f.castKind == 3) ult[d][fr] else cast[d][fr]
+            if (f.castKind == 3) ult[d][((timeAll * 10f).toInt()) % 9]
+            else cast[d][min(8, (f.castT / f.castDur * 9f).toInt())]
         } else if (f.lift > 12f) {
-            ult[d][8]
+            ult[d][((timeAll * 10f).toInt()) % 9]
         } else if (f.moving) {
             walk[d][((f.animT * 10f).toInt()) % 8]
         } else {
