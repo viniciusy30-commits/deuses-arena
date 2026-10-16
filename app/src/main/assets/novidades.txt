@@ -1,3 +1,11 @@
+#id 2026-10-16-l
+#titulo Skills refeitas do zero (efeito suave)
+- Raios, brilhos, nuvem e pilares de luz agora em efeito suave e brilhante, sem pixel art
+- Queda Relâmpago: raio em zigue-zague sobe e outro desce, com pilar de luz no ponto de queda
+- Raio Fulminante: pilar de eletricidade cai na marca, estilo El Thor
+- Fúria do Olimpo: o Zeus levita e raios caem aleatoriamente ao redor dele, sem círculos
+- Corrigido o braço do ataque quando o Zeus está de costas, de lado e de frente
+
 #id 2026-10-16-k
 #titulo Queda Relâmpago refeita e skills mirando
 - O Zeus vira um raio que sobe ao céu e desce como outro raio no ponto de queda (sem bola pulando)
