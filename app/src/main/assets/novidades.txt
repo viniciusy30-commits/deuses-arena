@@ -1,3 +1,11 @@
+#id 2026-10-16-b
+#titulo Efeitos elétricos e câmera
+- Novos efeitos em pixel-art: raios com ramificações e faíscas que combinam com as sprites
+- Ataques deixam marcas queimadas no chão e o alvo fica eletrocutado
+- Carga visível antes do Raio Fulminante e da Fúria do Olimpo (com escurecimento do chão)
+- O Zeus agora para ao atacar ou usar skill
+- Câmera mais afastada e arena maior
+
 #id 2026-10-16-a
 #titulo Primeira versão: Zeus na arena
 - Zeus jogável com animações de parado, andar e conjurar
