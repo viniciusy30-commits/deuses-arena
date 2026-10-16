@@ -69,6 +69,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         var dashDx = 0f
         var dashDy = 0f
         var dashHit = false
+        var dashEx = 0f
+        var dashEy = 0f
         var flash = 0f
         var shock = 0f
         var dead = false
@@ -140,6 +142,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var hintT = 8f
     private var timeAll = 0f
     private var hitStop = 0f
+    private var camInit = false
     private var darken = 0f
 
     // entrada
@@ -149,7 +152,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var joyX = 0f
     private var joyY = 0f
     private var atkId = -1
-    private val btns = arrayOf(Btn(0, "ATQ"), Btn(1, "PASSO"), Btn(2, "RAIO"), Btn(3, "FÚRIA"))
+    private val btns = arrayOf(Btn(0, "ATQ"), Btn(1, "QUEDA"), Btn(2, "RAIO"), Btn(3, "FÚRIA"))
     private var u = 1f
     private var vs = 1f
 
@@ -394,15 +397,43 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         f.dashDy = dy / l
         f.faceX = f.dashDx
         f.faceY = f.dashDy
-        f.dashT = 0.16f
+        f.dashEx = (f.x + f.dashDx * 330f).coerceIn(70f, AW - 70f)
+        f.dashEy = (f.y + f.dashDy * 330f).coerceIn(150f, AH - 50f)
+        f.dashT = 0.24f
         f.dashHit = false
         f.cd[1] = CD_MAX[1]
-        val ex = (f.x + f.dashDx * 288f).coerceIn(70f, AW - 70f)
-        val ey = (f.y + f.dashDy * 288f).coerceIn(150f, AH - 50f)
-        makeBolt(f.x, f.y - BODY, ex, ey - BODY, 0.32f, 6f, C_CYAN, C_BLUE, 22f, 3)
-        makeBolt(f.x, f.y - BODY, ex, ey - BODY, 0.22f, 3f, C_WHITE, C_CYAN, 12f, 1)
-        impact(f.x, f.y - BODY, 0.9f, C_CYAN, C_BLUE)
-        addScorch(f.x, f.y, 40f, 3f)
+        // sobe como um raio: coluna de luz do chão até o céu
+        makeBolt(f.x, f.y, f.x + rnd(-20f, 20f), f.y - 800f, 0.3f, 8f, C_CYAN, C_BLUE, 30f, 4)
+        makeBolt(f.x, f.y, f.x + rnd(-14f, 14f), f.y - 800f, 0.22f, 4f, C_WHITE, C_CYAN, 18f, 2)
+        impact(f.x, f.y - BODY, 1.2f, C_CYAN, C_BLUE)
+        addScorch(f.x, f.y, 45f, 3.5f)
+        screenFlash = max(screenFlash, 0.1f)
+    }
+
+    private fun landFromSky(f: Fighter) {
+        f.x = f.dashEx
+        f.y = f.dashEy
+        // cai do céu como um raio
+        val skyX = f.x + rnd(-25f, 25f)
+        makeBolt(skyX, f.y - 850f, f.x, f.y, 0.34f, 11f, C_CYAN, C_BLUE, 40f, 6)
+        makeBolt(skyX, f.y - 850f, f.x, f.y, 0.26f, 5f, C_WHITE, C_CYAN, 22f, 3)
+        impact(f.x, f.y - 10f, 1.7f, C_CYAN, C_BLUE)
+        rings.add(Ring(f.x, f.y, 150f, 0.4f, 0.4f, C_WHITE))
+        addScorch(f.x, f.y, 70f, 5f)
+        for (i in 0 until 8) {
+            val a = i * 0.7854f
+            makeBolt(f.x, f.y, f.x + cos(a) * 110f, f.y + sin(a) * 70f, 0.2f, 3f, C_CYAN, C_BLUE, 10f, 0)
+        }
+        screenFlash = max(screenFlash, 0.2f)
+        shake = max(shake, 0.3f)
+        hitStop = max(hitStop, 0.04f)
+        val o = opp(f)
+        if (!o.dead && hypot(o.x - f.x, o.y - f.y) < 120f) {
+            damage(o, 60f, 0.7f)
+            impact(o.x, o.y - BODY, 1.4f, C_WHITE, C_CYAN)
+            hitStop = max(hitStop, 0.07f)
+        }
+        clampPos(f)
     }
 
     private fun fire(f: Fighter, kind: Int) {
@@ -412,12 +443,37 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val outer = if (f.isPlayer) C_BLUE else C_REDD
         when (kind) {
             0 -> {
-                val sp = if (f.isPlayer) 780f else 420f
-                val dmg = if (f.isPlayer) 45f else 35f
-                projs.add(Proj(f, ox, oy, f.aimX * sp, f.aimY * sp, dmg, 0.75f, !f.isPlayer))
-                burst(ox, oy, 8, col, 220f, 0.3f)
-                rings.add(Ring(ox, oy, 40f, 0.18f, 0.18f, col))
-                for (i in 0 until 3) arc(ox, oy, rnd(25f, 45f), col, outer)
+                if (f.isPlayer) {
+                    val o = opp(f)
+                    val dist = hypot(o.x - f.x, o.y - BODY - oy)
+                    val len = 520f
+                    var ex = ox + f.aimX * len
+                    var ey = oy + f.aimY * len
+                    var hit = false
+                    if (!o.dead && hypot(o.x - ox, o.y - BODY - oy) <= len + 20f && dist < 680f) {
+                        ex = o.x
+                        ey = o.y - BODY
+                        hit = true
+                    }
+                    makeBolt(ox, oy, ex, ey, 0.24f, 5f, C_CYAN, C_BLUE, 16f, 3)
+                    makeBolt(ox, oy, ex, ey, 0.18f, 2.5f, C_WHITE, C_CYAN, 10f, 1)
+                    burst(ox, oy, 8, col, 220f, 0.3f)
+                    rings.add(Ring(ox, oy, 40f, 0.18f, 0.18f, col))
+                    impact(ex, ey, 0.9f, col, outer)
+                    if (hit) {
+                        damage(o, 45f, 0.3f)
+                        addScorch(o.x, o.y, 24f, 2.5f)
+                        hitStop = max(hitStop, 0.03f)
+                        shake = max(shake, 0.08f)
+                    } else {
+                        addScorch(ex, ey + BODY, 20f, 2f)
+                    }
+                } else {
+                    projs.add(Proj(f, ox, oy, f.aimX * 420f, f.aimY * 420f, 35f, 0.75f, true))
+                    burst(ox, oy, 8, col, 220f, 0.3f)
+                    rings.add(Ring(ox, oy, 40f, 0.18f, 0.18f, col))
+                    for (i in 0 until 3) arc(ox, oy, rnd(25f, 45f), col, outer)
+                }
             }
             2 -> {
                 val len = 560f
@@ -630,11 +686,15 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         if (shake > 0f) shake -= dt0
         if (screenFlash > 0f) screenFlash -= dt0
 
-        // câmera
+        // câmera (suave, para acompanhar o salto)
         val visW = width / vs
         val visH = height / vs
-        camX = if (visW >= AW) (AW - visW) / 2f else (player.x - visW / 2f).coerceIn(0f, AW - visW)
-        camY = if (visH >= AH) (AH - visH) / 2f else (player.y - 30f - visH / 2f).coerceIn(0f, AH - visH)
+        val tx = if (visW >= AW) (AW - visW) / 2f else (player.x - visW / 2f).coerceIn(0f, AW - visW)
+        val ty = if (visH >= AH) (AH - visH) / 2f else (player.y - 30f - visH / 2f).coerceIn(0f, AH - visH)
+        if (!camInit) { camX = tx; camY = ty; camInit = true }
+        val k = min(1f, dt0 * 9f)
+        camX += (tx - camX) * k
+        camY += (ty - camY) * k
     }
 
     private fun updateFighter(f: Fighter, dt: Float) {
@@ -662,27 +722,17 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             if (Random.nextFloat() < 0.4f) arc(f.x + rnd(-30f, 30f), f.y - BODY + rnd(-45f, 45f), rnd(30f, 70f))
         }
 
-        // dash
+        // Passo Relâmpago: some no céu e cai como um raio no destino
         if (f.dashT > 0f) {
+            f.moving = false
             f.dashT -= dt
-            f.x += f.dashDx * 1800f * dt
-            f.y += f.dashDy * 1800f * dt
-            ghosts.add(Ghost(f.x, f.y, dirOf(f.faceX, f.faceY), 0.3f))
-            parts.add(Part(f.x, f.y - BODY, rnd(-60f, 60f), rnd(-60f, 60f), 0.3f, 0.3f, if (Random.nextBoolean()) C_CYAN else C_WHITE, 4f))
-            if (Random.nextFloat() < 0.6f) arc(f.x + rnd(-20f, 20f), f.y - BODY + rnd(-40f, 40f), rnd(25f, 55f))
-            val o = opp(f)
-            if (!f.dashHit && !o.dead && hypot(o.x - f.x, o.y - f.y) < 70f) {
-                f.dashHit = true
-                damage(o, 50f, 0.4f)
-                impact(o.x, o.y - BODY, 1.1f, C_CYAN, C_BLUE)
-                hitStop = max(hitStop, 0.04f)
-                shake = max(shake, 0.12f)
+            if (Random.nextFloat() < 0.7f) {
+                arc(f.dashEx + rnd(-60f, 60f), f.dashEy + rnd(-30f, 10f), rnd(30f, 70f))
             }
             if (f.dashT <= 0f) {
-                impact(f.x, f.y - BODY, 0.8f, C_CYAN, C_BLUE)
-                addScorch(f.x, f.y, 36f, 3f)
+                f.dashT = 0f
+                landFromSky(f)
             }
-            clampPos(f)
             return
         }
 
@@ -778,7 +828,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun fxAlpha(a: Float, col: Int): Int = ((a.coerceIn(0f, 1f) * 255).toInt() shl 24) or (col and 0x00FFFFFF)
 
     private fun drawFighter(c: Canvas, f: Fighter) {
-        if (f.dead) return
+        if (f.dead || f.dashT > 0f) return
         // sombra
         p.style = Paint.Style.FILL
         p.color = 0x55000000
@@ -935,6 +985,22 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             if (prog > 0.5f) {
                 val a = timeAll * 14f
                 drawMiniArc(c, k.x + cos(a) * 85f, k.y + sin(a) * 85f * 0.8f, k.x + cos(a + 2.2f) * 60f, k.y + sin(a + 2.2f) * 50f, 2f, C_GOLD, C_BLUE)
+            }
+        }
+
+        // marcador de pouso do Passo Relâmpago
+        for (f in listOf(player, enemy)) {
+            if (!f.dead && f.dashT > 0f) {
+                val prog = (1f - f.dashT / 0.24f).coerceIn(0f, 1f)
+                fx.style = Paint.Style.FILL
+                fx.color = fxAlpha(0.1f + 0.3f * prog, C_CYAN)
+                c.drawCircle(f.dashEx, f.dashEy, 120f * prog, fx)
+                fx.style = Paint.Style.STROKE
+                fx.strokeWidth = 4f
+                fx.color = fxAlpha(0.85f, C_CYAN)
+                c.drawCircle(f.dashEx, f.dashEy, 120f, fx)
+                fx.color = fxAlpha(0.95f, C_WHITE)
+                c.drawCircle(f.dashEx, f.dashEy, 120f * (1f - prog) + 10f, fx)
             }
         }
 

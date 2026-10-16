@@ -1,3 +1,10 @@
+#id 2026-10-16-c
+#titulo Raio no ataque e queda relâmpago
+- Ataque básico agora é um raio instantâneo que acerta o inimigo
+- Passo Relâmpago virou Queda Relâmpago: o Zeus some no céu e cai como um raio no destino
+- A queda causa dano em área e deixa uma cratera elétrica
+- Câmera acompanha o salto de forma suave
+
 #id 2026-10-16-b
 #titulo Efeitos elétricos e câmera
 - Novos efeitos em pixel-art: raios com ramificações e faíscas que combinam com as sprites
