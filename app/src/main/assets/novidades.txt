@@ -1,0 +1,6 @@
+#id 2026-10-16-a
+#titulo Primeira versão: Zeus na arena
+- Zeus jogável com animações de parado, andar e conjurar
+- Ataque básico: Orbe Elétrico
+- Passo Relâmpago (movimento), Raio Fulminante (ataque) e Fúria do Olimpo (ultimate)
+- Arena de teste com um inimigo (Zeus vermelho) para testar as sprites

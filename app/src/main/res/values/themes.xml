@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.Deuses" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">#0B1020</item>
+        <item name="android:statusBarColor">#0B1020</item>
+        <item name="android:navigationBarColor">#0B1020</item>
+        <item name="colorPrimary">#4FC3F7</item>
+        <item name="colorOnPrimary">#0B1020</item>
+    </style>
+</resources>
